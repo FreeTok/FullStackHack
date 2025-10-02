@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>AR Фото</title>
+    <script src="./assets/aframe.min.js"></script>
+    <script src="./assets/mindar-image-aframe.prod.js"></script>
+    <script src="./assets/aframe-extras.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+
+        .ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .ui-overlay > * {
+            pointer-events: auto;
+        }
+
+        .controls-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(0deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+            padding: 20px 20px calc(env(safe-area-inset-bottom, 20px) + 20px) 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .photo-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: #fff;
+            border: 4px solid rgba(255,255,255,0.3);
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .photo-btn:active {
+            transform: scale(0.9);
+        }
+
+        .photo-btn::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            background: #fff;
+        }
+
+        .instruction {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(10px);
+            color: #fff;
+            padding: 20px 30px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 80%;
+            z-index: 1500;
+        }
+
+        .instruction.hidden {
+            display: none;
+        }
+
+        .instruction h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .instruction p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .result-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .result-modal.active {
+            display: flex;
+        }
+
+        .result-image {
+            max-width: 90%;
+            max-height: 70vh;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .result-btn {
+            padding: 12px 25px;
+            border-radius: 25px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .result-btn:active {
+            transform: scale(0.95);
+        }
+
+        .result-btn.download {
+            background: #4CAF50;
+            color: #fff;
+        }
+
+        .result-btn.retake {
+            background: #2196F3;
+            color: #fff;
+        }
+
+        .result-btn.tickets {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 3000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .loading.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            color: #fff;
+            font-size: 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #capture-canvas {
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            .controls-bar {
+                max-width: 600px;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Модальное окно согласия -->
+    <div id="audio-consent-modal" style="
+      position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(0,0,0,0.95);z-index:5000;
+      display:flex;align-items:center;justify-content:center;
+      flex-direction:column;color:#fff;font-family:sans-serif;">
+      <h2 style="margin-bottom:20px;text-align:center;">🔊 Включить звук?</h2>
+      <button id="start-audio-btn" style="
+        padding:15px 30px;
+        border:none;
+        border-radius:30px;
+        background:#4CAF50;
+        color:#fff;
+        font-size:18px;
+        cursor:pointer;
+      ">
+        Начать с музыкой
+      </button>
+    </div>
+
+    <canvas id="capture-canvas"></canvas>
+
+    <a-scene id="ar-scene" 
+    mindar-image="imageTargetSrc: ./assets/targets-new.mind; maxTrack: 3; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.0001; filterBeta: 0.01" 
+    color-space="sRGB" 
+    renderer="colorManagement: true, physicallyCorrectLights, antialias: true, alpha: true" 
+    vr-mode-ui="enabled: false" 
+    device-orientation-permission-ui="enabled: false"
+    embedded>
+
+    <a-assets>
+      <a-asset-item id="zayac" src="./assets/zayac.glb"></a-asset-item>
+      <a-asset-item id="cheb" src="./assets/oranges.glb"></a-asset-item>
+      <a-asset-item id="gena" src="./assets/sign.glb"></a-asset-item>
+      <a-asset-item id="shap" src="./assets/case.glb"></a-asset-item>
+      <audio id="target0-audio" src="./assets/cheba-song.mp3" preload="auto"></audio>
+      <audio id="target1-audio" src="./assets/volk-song.mp3" preload="auto"></audio>
+      <audio id="target2-audio" src="./assets/gena-song.mp3" preload="auto"></audio>
+      <audio id="target3-audio" src="./assets/shap-song.mp3" preload="auto"></audio>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false" cursor="rayOrigin: mouse"></a-camera>
+
+    <a-entity id="target-0" mindar-image-target="targetIndex: 0">
+      <a-gltf-model 
+          id="model-cheb"
+          rotation="0 -90 -20" 
+          position="0 -1 -1"
+          scale="0.5 0.5 0.5" 
+          src="#cheb"
+          animation-mixer="clip: *; loop: repeat; clampWhenFinished: true">
+      </a-gltf-model>
+    </a-entity>
+
+    <a-entity id="target-1" mindar-image-target="targetIndex: 1">
+      <a-gltf-model 
+          id="model-zayac"
+          rotation="0 0 0"
+          position="-0.5 -1 -1"
+          scale="0.5 0.5 0.5" 
+          src="#zayac" 
+          animation-mixer="clip: *; loop: repeat; clampWhenFinished: false; timeScale: 1">
+      </a-gltf-model>
+    </a-entity>
+
+    <a-entity id="target-2" mindar-image-target="targetIndex: 2">
+        <a-gltf-model 
+          id="model-gena"
+          rotation="0 270 -20"
+          position="-1 -2 -2"
+          scale="1 1 1" 
+          src="#gena">
+      </a-gltf-model>
+    </a-entity>
+
+    <a-entity id="target-3" mindar-image-target="targetIndex: 3">
+        <a-gltf-model 
+          id="model-shap"
+          rotation="0 225 0"
+          position="-0.5 -1 -1"
+          scale="1 1 1" 
+          src="#shap">
+      </a-gltf-model>
+    </a-entity>
+
+    </a-scene>
+
+    <div class="ui-overlay">
+        <div class="controls-bar">
+            <button class="photo-btn" id="photo-btn" onclick="takePhoto()"></button>
+        </div>
+    </div>
+
+    <div class="instruction" id="instruction">
+        <h3>📸 Наведите камеру на статую</h3>
+        <p>Когда появится AR объект, нажмите на кнопку фото</p>
+    </div>
+
+    <div class="result-modal" id="result-modal">
+        <img id="result-image" class="result-image" alt="Result" />
+        <div class="result-actions">
+            <button class="result-btn download" onclick="downloadResult()">
+                💾 Сохранить
+            </button>
+            <button class="result-btn retake" onclick="retakePhoto()">
+                🔄 Переделать
+            </button>
+            <button class="result-btn tickets" onclick="buyTickets()">
+              🎫 Купить билеты
+            </button>
+        </div>
+    </div>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text">Обработка изображения...</div>
+    </div>
+
+    <script>
+      let audioReady = false;
+
+      // Разрешение аудио по клику
+      document.getElementById('start-audio-btn').addEventListener('click', async () => {
+        const audios = [
+          document.getElementById('target0-audio'),
+          document.getElementById('target1-audio'),
+          document.getElementById('target2-audio'),
+          document.getElementById('target3-audio')
+        ];
+
+        for (const audio of audios) {
+          try {
+            // Инициализируем аудио контекст, но НЕ запускаем воспроизведение
+            audio.load();
+          } catch (e) {
+            console.warn('Audio init failed', e);
+          }
+        }
+        audioReady = true;
+        document.getElementById('audio-consent-modal').style.display = 'none';
+      });
+    </script>
+
+    <script>
+      let sceneReady = false;
+      let currentlyPlayingAudio = null;
+  
+      function showLoading(show) {
+          document.getElementById('loading').classList.toggle('active', show);
+      }
+  
+      function hideInstruction() {
+          document.getElementById('instruction').classList.add('hidden');
+      }
+  
+      function takePhoto() {
+        if (!sceneReady) {
+          return;
+        }
+
+        hideInstruction();
+
+        const sceneEl = document.querySelector('#ar-scene');
+        const video = sceneEl.systems["mindar-image-system"].video;
+
+        const w = video.videoWidth || video.width;
+        const h = video.videoHeight || video.height;
+
+        const photoCanvas = document.createElement('canvas');
+        photoCanvas.width = w;
+        photoCanvas.height = h;
+        const photoCtx = photoCanvas.getContext('2d');
+        photoCtx.drawImage(video, 0, 0, w, h);
+
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+
+        requestAnimationFrame(() => {
+          const arCanvas = sceneEl.canvas;
+          const arOnlyCanvas = document.createElement('canvas');
+          
+          arOnlyCanvas.width = arCanvas.width;
+          arOnlyCanvas.height = arCanvas.height;
+          const arOnlyCtx = arOnlyCanvas.getContext('2d', { 
+            alpha: true,
+            preserveDrawingBuffer: true 
+          });
+          
+          arOnlyCtx.drawImage(arCanvas, 0, 0);
+
+          const imageData = arOnlyCtx.getImageData(0, 0, arOnlyCanvas.width, arOnlyCanvas.height);
+          const hasContent = imageData.data.some((val, idx) => idx % 4 === 3 && val > 0);
+
+          const target0 = document.querySelector('#target-0');
+          const target1 = document.querySelector('#target-1');
+          const target2 = document.querySelector('#target-2');
+          const target3 = document.querySelector('#target-3');
+          let activeTarget = null;
+          
+          if (target0 && target0.object3D.visible) {
+            activeTarget = 'cheb';
+          } else if (target1 && target1.object3D.visible) {
+            activeTarget = 'volc';
+          } else if (target2 && target2.object3D.visible) {
+            activeTarget = 'gena';
+          } else if (target3 && target3.object3D.visible) {
+            activeTarget = 'shap';
+          }
+          
+          if (!hasContent) {
+            console.warn('AR canvas пустой!');
+          }
+          
+          sendToServer(photoCanvas, arOnlyCanvas, activeTarget);
+        });
+      }
+  
+      async function sendToServer(photoCanvas, arCanvas, activeTarget) {
+        showLoading(true);
+
+        try {
+          const photoBlob = await new Promise(resolve => 
+            photoCanvas.toBlob(resolve, 'image/png', 1.0)
+          );
+          const arBlob = await new Promise(resolve => 
+            arCanvas.toBlob(resolve, 'image/png', 1.0)
+          );
+                        
+          const formData = new FormData();
+          formData.append('photo', photoBlob, 'photo.png');
+          formData.append('ar_overlay', arBlob, 'ar_overlay.png');
+          if (activeTarget) {
+            formData.append('active_target', activeTarget);
+          }
+
+          const response = await fetch('/remove', {
+              method: 'POST',
+              body: formData
+          });
+
+          if (!response.ok) {
+              throw new Error(`Ошибка сервера: ${response.status}`);
+          }
+
+          const resultBlob = await response.blob();
+          
+          const img = new Image();
+          img.onload = () => {
+              const resultCanvas = document.createElement('canvas');
+              resultCanvas.width = img.width;
+              resultCanvas.height = img.height;
+              const ctx = resultCanvas.getContext('2d');
+              
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, resultCanvas.width, resultCanvas.height);
+              
+              ctx.drawImage(img, 0, 0);
+              
+              const resultUrl = resultCanvas.toDataURL('image/png');
+              document.getElementById('result-image').src = resultUrl;
+              document.getElementById('result-modal').classList.add('active');
+              
+              URL.revokeObjectURL(img.src);
+              showLoading(false);
+          };
+          img.src = URL.createObjectURL(resultBlob);
+          
+        } catch (error) {
+            console.error(error);
+            alert('Не удалось обработать изображение. Проверьте подключение к серверу.');
+            showLoading(false);
+        }
+      }
+  
+      function downloadResult() {
+          const img = document.getElementById('result-image');
+          const link = document.createElement('a');
+          link.download = `ar-photo-${Date.now()}.png`;
+          link.href = img.src;
+          link.click();
+      }
+  
+      function retakePhoto() {
+          document.getElementById('result-modal').classList.remove('active');
+      }
+
+      function buyTickets() {
+          window.open('https://souzmultpark.ru/?promo=promo1', '_blank');
+      }
+  
+      document.addEventListener('DOMContentLoaded', () => {
+          const sceneEl = document.querySelector('a-scene');
+          
+          sceneEl.addEventListener('renderstart', () => {
+              sceneReady = true;
+          });
+  
+          sceneEl.addEventListener('targetFound', () => {
+              hideInstruction();
+          });
+
+          // target-0 (Чебурашка)
+          const target0 = document.querySelector('#target-0');
+          const audio0 = document.getElementById('target0-audio');
+          const modelCheb = document.querySelector('#model-cheb');
+
+          if (!currentlyPlayingAudio && target0 && audio0) {
+            target0.addEventListener('targetFound', () => {
+              modelCheb.setAttribute('visible', true);
+              const mixer = modelCheb.components['animation-mixer'];
+              if (mixer) {
+                  mixer.mixer.setTime(0);
+                  mixer.play();
+              }
+              
+              // Останавливаем текущую песню, если есть
+              if (currentlyPlayingAudio && currentlyPlayingAudio !== audio0) {
+                currentlyPlayingAudio.pause();
+                currentlyPlayingAudio.currentTime = 0;
+              }
+              
+              audio0.play().catch(e => console.log('Audio play failed:', e));
+              currentlyPlayingAudio = audio0;
+            });
+
+            target0.addEventListener('targetLost', () => {
+              audio0.pause();
+              if (currentlyPlayingAudio === audio0) {
+                currentlyPlayingAudio = null;
+              }
+            });
+          }
+
+          // target-1 (Заяц)
+          const target1 = document.querySelector('#target-1');
+          const audio1 = document.getElementById('target1-audio');
+
+          if (!currentlyPlayingAudio && target1 && audio1) {
+            target1.addEventListener('targetFound', () => {
+              // Останавливаем текущую песню, если есть
+              if (currentlyPlayingAudio && currentlyPlayingAudio !== audio1) {
+                currentlyPlayingAudio.pause();
+                currentlyPlayingAudio.currentTime = 0;
+              }
+              
+              audio1.play().catch(e => console.log('Audio play failed:', e));
+              currentlyPlayingAudio = audio1;
+            });
+
+            target1.addEventListener('targetLost', () => {
+              audio1.pause();
+              if (currentlyPlayingAudio === audio1) {
+                currentlyPlayingAudio = null;
+              }
+            });
+          }
+
+          // target-2 (Гена)
+          const target2 = document.querySelector('#target-2');
+          const audio2 = document.getElementById('target2-audio');
+
+          if (!currentlyPlayingAudio && target2 && audio2) {
+            target2.addEventListener('targetFound', () => {
+              // Останавливаем текущую песню, если есть
+              if (currentlyPlayingAudio && currentlyPlayingAudio !== audio2) {
+                currentlyPlayingAudio.pause();
+                currentlyPlayingAudio.currentTime = 0;
+              }
+              
+              audio2.play().catch(e => console.log('Audio play failed:', e));
+              currentlyPlayingAudio = audio2;
+            });
+
+            target2.addEventListener('targetLost', () => {
+              audio2.pause();
+              if (currentlyPlayingAudio === audio2) {
+                currentlyPlayingAudio = null;
+              }
+            });
+          }
+
+          // target-3 (Шапокляк)
+          const target3 = document.querySelector('#target-3');
+          const audio3 = document.getElementById('target3-audio');
+
+          if (!currentlyPlayingAudio && target3 && audio3) {
+            target3.addEventListener('targetFound', () => {
+              // Останавливаем текущую песню, если есть
+              if (currentlyPlayingAudio && currentlyPlayingAudio !== audio3) {
+                currentlyPlayingAudio.pause();
+                currentlyPlayingAudio.currentTime = 0;
+              }
+              
+              audio3.play().catch(e => console.log('Audio play failed:', e));
+              currentlyPlayingAudio = audio3;
+            });
+
+            target3.addEventListener('targetLost', () => {
+              audio3.pause();
+              if (currentlyPlayingAudio === audio3) {
+                currentlyPlayingAudio = null;
+              }
+            });
+          }
+      });
+  
+      document.addEventListener('gesturestart', function (e) {
+          e.preventDefault();
+      });
+  </script>
+</body>
+</html>
