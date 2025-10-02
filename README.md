@@ -56,6 +56,8 @@ git clone [<repo-url>](https://github.com/FreeTok/FullStackHack)
 
 cd FullStackHack
 
+Установите библиотеки для Python
+
 ### 2. Настройка сертификатов
 
 В файле server.py в самой последней строке укажите путь до ваших SSL-сертификатов.
