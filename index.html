@@ -41,6 +41,43 @@
             pointer-events: auto;
         }
 
+        .status-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+            padding: env(safe-area-inset-top, 10px) 15px 20px 15px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .status-info {
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 8px 15px;
+            color: #fff;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         .controls-bar {
             position: absolute;
             bottom: 0;
@@ -251,7 +288,7 @@
     <canvas id="capture-canvas"></canvas>
 
     <a-scene id="ar-scene" 
-    mindar-image="imageTargetSrc: ./assets/targets-new.mind; maxTrack: 3; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.0001; filterBeta: 0.01" 
+    mindar-image="imageTargetSrc: ./assets/targets-night.mind; maxTrack: 3; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF:0.0001; filterBeta: 0.01" 
     color-space="sRGB" 
     renderer="colorManagement: true, physicallyCorrectLights, antialias: true, alpha: true" 
     vr-mode-ui="enabled: false" 
@@ -296,7 +333,7 @@
     <a-entity id="target-2" mindar-image-target="targetIndex: 2">
         <a-gltf-model 
           id="model-gena"
-          rotation="0 270 -20"
+          rotation="0 90 -20"
           position="-1 -2 -2"
           scale="1 1 1" 
           src="#gena">
@@ -316,6 +353,13 @@
     </a-scene>
 
     <div class="ui-overlay">
+        <div class="status-bar">
+            <div class="status-info">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Загрузка...</span>
+            </div>
+        </div>
+
         <div class="controls-bar">
             <button class="photo-btn" id="photo-btn" onclick="takePhoto()"></button>
         </div>
@@ -375,6 +419,10 @@
       let sceneReady = false;
       let currentlyPlayingAudio = null;
   
+      function updateStatus(status) {
+          document.getElementById('status-text').textContent = status;
+      }
+  
       function showLoading(show) {
           document.getElementById('loading').classList.toggle('active', show);
       }
@@ -385,6 +433,7 @@
   
       function takePhoto() {
         if (!sceneReady) {
+          updateStatus('Подождите загрузки AR');
           return;
         }
 
@@ -448,6 +497,7 @@
   
       async function sendToServer(photoCanvas, arCanvas, activeTarget) {
         showLoading(true);
+        updateStatus('Обработка...');
 
         try {
           const photoBlob = await new Promise(resolve => 
@@ -492,12 +542,14 @@
               document.getElementById('result-modal').classList.add('active');
               
               URL.revokeObjectURL(img.src);
+              updateStatus('Готово! ✨');
               showLoading(false);
           };
           img.src = URL.createObjectURL(resultBlob);
           
         } catch (error) {
             console.error(error);
+            updateStatus('Ошибка обработки');
             alert('Не удалось обработать изображение. Проверьте подключение к серверу.');
             showLoading(false);
         }
@@ -513,6 +565,7 @@
   
       function retakePhoto() {
           document.getElementById('result-modal').classList.remove('active');
+          updateStatus('AR активен');
       }
 
       function buyTickets() {
@@ -524,10 +577,16 @@
           
           sceneEl.addEventListener('renderstart', () => {
               sceneReady = true;
+              updateStatus('Наведите на статую');
           });
   
           sceneEl.addEventListener('targetFound', () => {
               hideInstruction();
+              updateStatus('AR активен');
+          });
+  
+          sceneEl.addEventListener('targetLost', () => {
+              updateStatus('Статуя потерян');
           });
 
           // target-0 (Чебурашка)
